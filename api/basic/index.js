@@ -61,6 +61,18 @@ export default {
 			data: params
 	    });
 	},
+	
+	// 删除
+	unAudit(params) {
+	    return Request().post('/Kingdee.BOS.WebApi.ServicesStub.DynamicFormService.UnAudit.common.kdsvc', {
+	        header: {
+				"accept": '*/*',
+				"contentType": 'application/json',
+				"kdservice-sessionid": uni.getStorageSync('kdservice-sessionid'),
+	        },
+			data: params
+	    });
+	},
 	//扫码
     barcodeScan(params) {
         return Request().post('/api/basic/barcodeScan', {

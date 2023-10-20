@@ -299,7 +299,12 @@
 						that.getSeviceId()
 					},
 					fail(e) {
-						that.errorCodeTip(e.errCode);
+						if(e.message =="already connect"){
+							BLEInformation.deviceId = title;
+							that.getSeviceId()
+						}else{
+							that.errorCodeTip(e.errCode);
+						}
 						uni.hideLoading()
 					}
 				})

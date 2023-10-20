@@ -70,7 +70,18 @@ globalInterceptor.response.use(
         }
         const {data} = res;
         try {
-			return Promise.resolve(data, config);
+			console.log(11111111)
+			console.log(data)
+			if(Object.prototype.toString.call(data) === '[object Object]'){
+				return Promise.resolve(data, config);
+			}else{
+				if(typeof(data[0][0]['Result']) == "undefined"){
+					return Promise.resolve(data, config);
+				}else{
+					return Promise.reject(data);
+				}
+				
+			}
         } catch (err) {
             return Promise.reject(err);
         }

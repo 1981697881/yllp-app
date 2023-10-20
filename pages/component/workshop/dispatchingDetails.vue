@@ -76,10 +76,10 @@
 						<button :disabled="isClick" class="cu-btn margin-top bg-green shadow-blur round lg"
 							style="width: 40%;" @tap="packingBig">装箱(大)</button>
 						<button class="cu-btn bg-blue shadow-blur round lg" style="width: 40%;"
-							@tap="$manyCk(printCode)">打印(大)</button>
+							@tap="$manyCk(printBigCode)">打印(大)</button>
 					</view>
 					<view class="sava-btn">
-						<button class="cu-btn bg-orange shadow-blur round lg" style="width: 100%;"
+						<button :disabled="isClick" class="cu-btn bg-orange shadow-blur round lg" style="width: 100%;"
 							@tap="$manyCk(saveData)"><text class="cuIcon-check"></text>提交</button>
 					</view>
 				</view>
@@ -261,7 +261,7 @@
 						"FilterString": "FID =" + id +"",
 						"FormId": "QDEP_Cust_PackInfo",
 						"OrderString": "FBillNo ASC,FMaterialId.FNumber ASC",
-						"FieldKeys": "FBillNo,FCreateDate,FOutBillNo,FEntity_FEntryId,FMaterialID.FNumber,FMaterialID.FName,FQty,FBoxBarcode,FPackBarCode,FID",
+						"FieldKeys": "FBillNo,FCreateDate,FOutBillNo,FEntity_FEntryId,FMaterialID.FNumber,FMaterialID.FName,FQty,FBoxBarcode,FPackBarCode,FID,FSrcID,FSrcEntryID",
 					}
 				}).then(res => {
 						let reso = res[0];
@@ -269,8 +269,8 @@
 							var beSelect=[]
 							res.forEach((item, index) => {
 								beSelect.push({
-									fid: 0,
-									fEntryId: 0,
+									fid: item[10],
+									fEntryId: item[11],
 									fName: item[5],
 									fNumber: item[4],
 									fQty: 0,
@@ -281,7 +281,7 @@
 									pickBigCode: item[8],
 								})
 							})
-							me.cuIList = beSelect
+							me.cuIList = [...beSelect]
 						}else{
 							uni.showToast({
 								icon: 'none',
@@ -296,18 +296,20 @@
 					})
 			},
 			packing() {
+				var printCode = new Date().getTime();
 				for (var element in this.cuIList) {
 					console.log(this.cuIList[element])
 					if (this.cuIList[element]['pickCode'] == 0) {
-						this.cuIList[element]['pickCode'] = new Date().getTime();
+						this.cuIList[element]['pickCode'] = printCode;
 					}
 				}
 			},
 			packingBig() {
 				var code = 0;
+				var printCode = new Date().getTime();
 				for (var element in this.cuIList) {
 					if (this.cuIList[element]['pickBigCode'] == 0) {
-						this.cuIList[element]['pickBigCode'] = 'B' + '' + new Date().getTime();
+						this.cuIList[element]['pickBigCode'] = 'B' + '' + printCode;
 					}
 				}
 				/* for (var element in this.cuIList) {
@@ -377,6 +379,7 @@
 			},
 			printBigCode() {
 				let me = this;
+				var printData = [];
 				for (var item in this.cuIList) {
 					if (printData.indexOf(this.cuIList[item]['pickBigCode']) == -1 && this.cuIList[item]['pickBigCode'] !=
 						0) {
@@ -433,7 +436,7 @@
 			},
 			cityClick(item) {
 				console.log(item)
-				this.cuIList.push(item)
+				this.cuIList.push({...item})
 				this.modalName = null
 			},
 			clearList() {
@@ -458,8 +461,13 @@
 				let list = this.cuIList
 				let that = this
 				let paramData = []
+				let orderParams = []
 				var number = 0;
 				for (var element in list) {
+					if(orderParams.indexOf(list[element]['fid'])==-1){
+						//提交单据次数
+						orderParams.push(list[element]['fid'])
+					}
 					if (list[element]['pickCode'] == 0 || list[element]['pickBigCode'] == 0) {
 						number++;
 						break;
@@ -472,6 +480,8 @@
 							"FQty": list[element]['amount'],
 							"FBoxBarcode": list[element]['pickCode'],
 							"FPackBarCode": list[element]['pickBigCode'],
+							"FSrcID": list[element]['fid'],
+							"FSrcEntryID ": list[element]['fEntryId'],
 							//"FMarerialSpec": list[element]['fSpecification'],
 						})
 					}
@@ -483,6 +493,7 @@
 						title: '装箱未完成',
 					});
 				}
+				uni.showNavigationBarLoading();
 				basic
 					.kdSave({
 						"formid": "QDEP_Cust_PackInfo",
@@ -498,62 +509,156 @@
 					}).then(saveRes => {
 						let saveReso = saveRes[0];
 						if (saveRes['Result']['ResponseStatus']['IsSuccess']) {
-							uni.showToast({
-								title: "保存成功",
-								icon: 'success',
-								duration: 2000,
-								mask: true,
-								success: function() {
-									setTimeout(function() {
-										//要延时执行的代码
-										uni.navigateBack();
-									}, 2000) //延迟时间
-								}
-							});
-							//提交
-							/* that.$api('kdSubmit', {
-								"formid": "QDEP_Cust_PackInfo",
-								"data": {
-									"Ids": userReso[0],
-								},
-							}, 1).then(submitRes => {
-								let submitReso = submitRes[0];
-								if (submitRes != null && submitRes['Result']['ResponseStatus']['IsSuccess']) {
-									//审核
-									that.$api('kdAudit', {
-										"formid": "QDEP_Cust_PackInfo",
-										"data": {"Ids": userReso[0]},
-									}, 1).then(
-										auditRes => {
-											let auditReso = auditRes[0];
-											if (auditRes != null && auditRes['Result']['ResponseStatus']['IsSuccess']) {
-												uni.showToast({
-													title: "修改成功",
-													icon: 'success',
-													duration: 2000,
-													mask: true,
-													success: function() {
-														uni.navigateBack();
+							console.log(orderParams)
+							for(var item in orderParams){
+								basic.unAudit({
+										"formid": "SAL_OUTSTOCK",
+										"data": {
+											"Ids": orderParams[item],
+										},
+									}).then(unAuditRes => {
+										let unAuditReso = unAuditRes[0];
+										if (unAuditRes != null && unAuditRes['Result']['ResponseStatus'][
+												'IsSuccess'
+											]) {
+											//保存
+											basic.kdSave({
+												"formid": "SAL_OUTSTOCK",
+												"data": {
+													"NeedUpDataFields": ["FEntity"],
+													"NeedReturnFields": ["FEntity"],
+													"IsDeleteEntry": false,
+													"Model": {
+														"FID": orderParams[item],
+														"FOutStatus": "待收货",
+													},
+												}
+											}).then(
+												keepRes => {
+													let keepReso = keepRes[0];
+													if (keepRes != null && keepRes['Result'][
+															'ResponseStatus'
+														]['IsSuccess']) {
+														//提交
+														basic.kdSubmit({
+															"formid": "SAL_OUTSTOCK",
+															"data": {
+																"Ids": orderParams[item],
+															},
+														}).then(submitRes => {
+															let submitReso = submitRes[0];
+															if (submitRes != null && submitRes['Result'][
+																	'ResponseStatus'
+																]['IsSuccess']) {
+																//审核
+																basic.kdAudit({
+																	"formid": "SAL_OUTSTOCK",
+																	"data": {
+																		"Ids": orderParams[item],
+																	},
+																}).then(
+																	auditRes => {
+																		let auditReso = auditRes[0];
+																		if (auditRes != null && auditRes['Result'][
+																				'ResponseStatus'
+																			]['IsSuccess']) {
+																			if(item+1==orderParams.length){
+																				uni.hideNavigationBarLoading();
+																				uni.showToast({
+																					title: "保存成功",
+																					icon: 'success',
+																					duration: 2000,
+																					mask: true,
+																					success: function() {
+																						setTimeout(function() {
+																							//要延时执行的代码
+																							uni.navigateBack();
+																						}, 2000) //延迟时间
+																					}
+																				});
+																			}
+																		} else {
+																			this.isClick = false
+																			uni.hideNavigationBarLoading();
+																			uni.showToast({
+																				icon: 'none',
+																				title: auditRes[
+																						'Result'
+																					]
+																					[
+																						'ResponseStatus'
+																					]
+																					[
+																						'Errors'
+																					]
+																					[
+																						0
+																					]
+																					[
+																						'Message'
+																					]
+																			})
+																		}
+																	});
+															} else {
+																this.isClick = false
+																uni.hideNavigationBarLoading();
+																uni.showToast({
+																	icon: 'none',
+																	title: submitRes[
+																			'Result'
+																		][
+																			'ResponseStatus'
+																		][
+																			'Errors'
+																		]
+																		[0][
+																			'Message'
+																		]
+																})
+															}
+														});
+								
+													} else {
+														this.isClick = false
+														uni.hideNavigationBarLoading();
+														uni.showToast({
+															icon: 'none',
+															title: keepRes[
+																	'Result'
+																]
+																[
+																	'ResponseStatus'
+																]
+																[
+																	'Errors'
+																]
+																[
+																	0
+																]
+																[
+																	'Message'
+																]
+														})
 													}
 												});
-											} else {
-												this.isClick = false
-												uni.showToast({
-													icon: 'none',
-													title: submitRes['Result']['ResponseStatus']['Errors'][0]['Message']
-												})
-											}
-										});
-								} else {
-									this.isClick = false
-									uni.showToast({
-										icon: 'none',
-										title: submitRes['Result']['ResponseStatus']['Errors'][0]['Message']
-									})
-								}
-							}); */
+										} else {
+											this.isClick = false
+											uni.hideNavigationBarLoading();
+											uni.showToast({
+												icon: 'none',
+												title: unAuditRes['Result'][
+													'ResponseStatus'
+												]['Errors'][0]['Message']
+											})
+										}
+									});
+								
+							}
+							
 						} else {
 							this.isClick = false
+							uni.hideNavigationBarLoading();
 							uni.showToast({
 								icon: 'none',
 								title: saveRes['Result']['ResponseStatus']['Errors'][0]['Message']
@@ -676,17 +781,22 @@
 					},
 					fail(e) {
 						console.log('createBLEConnection error:', e)
-						that.errorCodeTip(e.errCode);
 						uni.hideLoading()
-						uni.navigateTo({
-							url: '/pages/bleConnect/bleConnect?obj=' +
-								encodeURIComponent(
-									JSON
-									.stringify(
-										that
-										.printRes
-									))
-						});
+						if(e.message =="already connect"){
+							BLEInformation.deviceId = title;
+							that.getSeviceId()
+						}else{
+							that.errorCodeTip(e.errCode);
+							uni.navigateTo({
+								url: '/pages/bleConnect/bleConnect?obj=' +
+									encodeURIComponent(
+										JSON
+										.stringify(
+											that
+											.printRes
+										))
+							});
+						}
 					}
 				})
 			},
@@ -851,13 +961,13 @@
 			},
 			openControl: function() {
 				let that = this;
-				for (let i = 0; i < that.printData.length; i++) {
+				for (let i = 0; i < that.printRes.length; i++) {
 					if (i == 0) {
-						that.labelTest(that.printData[i]);
+						that.labelTest(that.printRes[i]);
 					} else {
 						(function(t, data) { // 注意这里是形参
 							setTimeout(function() {
-								that.labelTest(that.printData[i]);
+								that.labelTest(that.printRes[i]);
 							}, 3000 * t); // 还是每秒执行一次，不是累加的
 						})(i, '') // 
 					}

@@ -264,7 +264,6 @@
 						"FormId": "QDEP_Cust_PackInfo",
 						"OrderString": "FBillNo ASC,FMaterialId.FNumber ASC",
 						"FieldKeys": "FBillNo,FCreateDate,FOutBillNo,FEntity_FEntryId,FMaterialID.FNumber,FMaterialID.FName,FQty,FBoxBarcode,FPackBarCode,FID",
-						"Limit": "10"
 					}
 				}
 				return params

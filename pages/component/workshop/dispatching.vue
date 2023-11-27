@@ -37,21 +37,16 @@
 						<view style="clear: both;width: 100%;" class="grid text-left col-2"
 							@tap="$manyCk(showList(index, item))" data-target="Modal" data-number="item.number">
 							<view class="text-grey">序号:{{index+1}}</view>
-							<view class="text-grey">送货单号:{{item[0]}}</view>
-							<view class="text-grey" style="width: 100%;">客户:{{item[8]}}</view>
 							<view class="text-grey">日期:{{item[3].substring(0, 10)}}</view>
-							<view class="text-grey">物料名称:{{item[5]}}</view>
-							<view class="text-grey">规格型号:{{item[7]}}</view>
-							<view class="text-grey">单位名称:{{item[10]}}</view>
-							<view class="text-grey">数量:{{item[12]}}</view>
-							<view class="text-grey">供应商:{{item[1]}}</view>
+							<view class="text-grey">送货单号:{{item[0]}}</view>
+							<view class="text-grey" style="width: 100%;">客户:{{item[2]}}</view>
+							<view class="text-grey" style="width: 100%;">备注:{{item[7]}}</view>
 						</view>
 					</view>
-				</view>
+				</view> 
 			</view>
 		</scroll-view>
-		<text v-if="isShow"
-			class="loading-text">{{ loadingType === 0 ? contentText.contentdown : loadingType === 1 ? contentText.contentrefresh : contentText.contentnomore }}</text>
+		<!-- <text v-if="isShow" class="loading-text">{{ loadingType === 0 ? contentText.contentdown : loadingType === 1 ? contentText.contentrefresh : contentText.contentnomore }}</text> -->
 	</view>
 </template>
 
@@ -125,11 +120,11 @@
 			if (JSON.stringify(option) != "{}") {
 				this.start = option.startDate
 				this.end = option.endDate
-				//this.getNewsList()
+				this.getNewsList()
 			} else {
 				this.start = this.getDay('', -7).date
 				this.end = this.getDay('', 7).date
-				//this.getNewsList()
+				this.getNewsList()
 			}
 		},
 		onReady: function() {
@@ -159,7 +154,7 @@
 		},
 		// 上拉加载
 		onReachBottom: function() {
-			this.isShow = false
+			/* this.isShow = false
 			page++; //每触底一次 page +1
 			// console.log(_self.cuIconList.length);
 			if (_self.loadingType != 0) {
@@ -196,7 +191,7 @@
 						icon: 'none',
 						title: err.msg
 					});
-				});
+				}); */
 		},
 		methods: {
 			fabClick() {
@@ -320,20 +315,19 @@
 							"FilterString": "FBillNo like '%" + this.keyword +
 								"%' and FDocumentStatus ='C'",
 							"FormId": "SAL_OUTSTOCK",
-							"OrderString": "FBillNo ASC,FMaterialId.FNumber ASC",
-							"FieldKeys": "FBillNo,FCustomerID.FNumber,FCustomerID.FName,FDate,FEntity_FEntryId,FMaterialId.FNumber,FMaterialId.FName,FMaterialId.FSpecification,FSaleOrgId.FNumber,FSaleOrgId.FName,FUnitID.FNumber,FUnitID.FName,FRealQty,FSrcBillNo,FID",
-							"Limit": "10"
+							"OrderString": "FBillNo ASC",
+							"FieldKeys": "FBillNo,FCustomerID.FNumber,FCustomerID.FName,FDate,FSaleOrgId.FNumber,FSaleOrgId.FName,FID,FNote",
+							"Limit": "50"
 						}
 					}
 				} else {
 					params = {
 						data: {
-							"FilterString": "FDocumentStatus ='C' and FDate>= '" + this.start + "' and FDate <= '" + this
-								.end + "'",
+							"FilterString": "FDocumentStatus ='C' and FDate>= '" + this.start + "' and FDate <= '" + this.end + "'",
 							"FormId": "SAL_OUTSTOCK",
-							"OrderString": "FBillNo ASC,FMaterialId.FNumber ASC",
-							"FieldKeys": "FBillNo,FCustomerID.FNumber,FCustomerID.FName,FDate,FEntity_FEntryId,FMaterialId.FNumber,FMaterialId.FName,FMaterialId.FSpecification,FSaleOrgId.FNumber,FSaleOrgId.FName,FUnitID.FNumber,FUnitID.FName,FRealQty,FSrcBillNo,FID",
-							"Limit": "10"
+							"OrderString": "FBillNo ASC",
+							"FieldKeys": "FBillNo,FCustomerID.FNumber,FCustomerID.FName,FDate,FSaleOrgId.FNumber,FSaleOrgId.FName,FID,FNote",
+							"Limit": "50"
 						}
 					}
 				}

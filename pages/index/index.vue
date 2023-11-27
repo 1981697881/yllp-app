@@ -136,7 +136,7 @@
 			AndroidCheckUpdate2() {
 				var that = this;
 				uni.request({
-					url: service.getUrls().url + '/pda/output.json', //获取最新版本号
+					url: 'http://www.gzfzdev.com/app/output-metadata.json', //获取最新版本号
 					method: 'GET',
 					data: {},
 					success: res => {
@@ -159,8 +159,7 @@
 
 							//res.data.androidurl    是apk的下载链接
 							console.log('准备');
-							var dtask = plus.downloader.createDownload(service.getUrls().url +
-								'/pda/fzwmxy.apk', {},
+							var dtask = plus.downloader.createDownload('http://www.gzfzdev.com/app/yllp.apk', {},
 								function(d, status) {
 									console.log('开始');
 									// 下载完成
@@ -193,7 +192,7 @@
 				var _this = this;
 				uni.request({
 					//请求地址，设置为自己的服务器链接
-					url: service.getUrls().url + '/pda/output.json',
+					url: 'http://www.gzfzdev.com/app/output-metadata.json',
 					method: 'GET',
 					data: {},
 					success: resMz => {
@@ -242,7 +241,7 @@
 			},
 			downWgt: function() {
 				var that = this;
-				var downloadApkUrl = service.getUrls().url + '/pda/fzwmxy.apk';
+				var downloadApkUrl = 'http://www.gzfzdev.com/app/yllp.apk';
 				var dtask = plus.downloader.createDownload(downloadApkUrl, {}, function(d, status) {
 					// 下载完成
 					if (status == 200) {
@@ -321,7 +320,7 @@
 									}); */
 									that.downWgt(); //下载文件
 									/* //设置 最新版本apk的下载链接
-									var downloadApkUrl = service.getUrls().url+'/pda/fzwmxy.apk';
+									var downloadApkUrl = service.getUrls().url+'/app/yllp.apk';
 									var dtask = plus.downloader.createDownload(downloadApkUrl, {}, function(d, status) {
 										// 下载完成
 										if (status == 200) {

@@ -26,8 +26,7 @@
 				</view>
 			</view>
 		</scroll-view>
-		<text v-if="isShow"
-			class="loading-text">{{ loadingType === 0 ? contentText.contentdown : loadingType === 1 ? contentText.contentrefresh : contentText.contentnomore }}</text>
+		<!-- <text v-if="isShow" class="loading-text">{{ loadingType === 0 ? contentText.contentdown : loadingType === 1 ? contentText.contentrefresh : contentText.contentnomore }}</text> -->
 	</view>
 </template>
 
@@ -107,7 +106,7 @@
 		},
 		// 上拉加载
 		onReachBottom: function() {
-			this.isShow = false
+			/* this.isShow = false
 			page++; //每触底一次 page +1
 			// console.log(_self.cuIconList.length);
 			if (_self.loadingType != 0) {
@@ -144,13 +143,11 @@
 						icon: 'none',
 						title: err.msg
 					});
-				});
+				}); */
 		},
 		methods: {
 			// 产品列表数据
 			getNewsList: function(val = this.qFilter()) {
-				console.log(1111111)
-				console.log(val)
 				//第一次回去数据
 				this.loadingType = 0;
 				uni.showNavigationBarLoading();

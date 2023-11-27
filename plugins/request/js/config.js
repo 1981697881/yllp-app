@@ -70,8 +70,6 @@ globalInterceptor.response.use(
         }
         const {data} = res;
         try {
-			console.log(11111111)
-			console.log(data)
 			if(Object.prototype.toString.call(data) === '[object Object]'){
 				return Promise.resolve(data, config);
 			}else{

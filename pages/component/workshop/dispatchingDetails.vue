@@ -29,15 +29,18 @@
 				</view>
 			</view>
 		</view>
-		<view class="cu-modal" :class="modalName=='Modal'?'show':''">
-			<view class="cu-dialog" style="height: 70%;margin-top: 20%;">
-				<view class="cu-bar bg-white justify-end" style="height: 60upx;">
-					<view class="content">单据信息</view>
+		<view class="cu-modal show" v-if="modalName=='Modal'" ><!-- :class="modalName=='Modal'?'show':''" -->
+			<view class="cu-dialog" style="height: 80%;margin-top: 20%;">
+				<view class="cu-bar bg-white justify-between" style="height: 90upx;">
+					<view class="action" @tap="comfirmData">
+						<text class="cuIcon-check text-red"></text>
+					</view>
+					<view class="title">单据信息</view>
 					<view class="action" @tap="hideModal">
 						<text class="cuIcon-close text-red"></text>
 					</view>
 				</view>
-				<view style="height: 100%;overflow: auto;text-align: left;">
+				<view style="height: 90%;overflow: auto;text-align: left;">
 					<city-select @cityClick="cityClick" :formatName="formatName" :obtainCitys="toBeSelected"
 						:isSearch="true" style="width: auto !important;" ref="citys"></city-select>
 				</view>
@@ -61,7 +64,7 @@
 					<uni-td align="center">{{item['fName']}}</uni-td>
 					<uni-td align="center">{{item['fSpecification']}}</uni-td>
 					<uni-td align="center">{{item['fQty']}}</uni-td>
-					<uni-td align="center">{{item['amount']}}</uni-td>
+					<uni-td align="center"><input type="number" :value="item['amount']" @input="textInput($event,item)" placeholder="请输入"/></uni-td>
 					<uni-td align="center">{{item['pickCode']}}</uni-td>
 					<uni-td align="center">{{item['pickBigCode']}}</uni-td>
 				</uni-tr>
@@ -72,11 +75,11 @@
 						<button :disabled="isClick" class="cu-btn bg-green shadow-blur round lg" style="width: 40%;"
 							@tap="packing">装箱</button>
 						<button class="cu-btn bg-blue shadow-blur round lg" style="width: 40%;"
-							@tap="$manyCk(printCode)">打印</button>
+							@tap="$manyCk(printCode)" :disabled='btn_disabled'>打印</button>
 						<button :disabled="isClick" class="cu-btn margin-top bg-green shadow-blur round lg"
 							style="width: 40%;" @tap="packingBig">装箱(大)</button>
 						<button class="cu-btn bg-blue shadow-blur round lg" style="width: 40%;"
-							@tap="$manyCk(printBigCode)">打印(大)</button>
+							@tap="$manyCk(printBigCode)" :disabled='btn_disabled'>打印(大)</button>
 					</view>
 					<view class="sava-btn">
 						<button :disabled="isClick" class="cu-btn bg-orange shadow-blur round lg" style="width: 100%;"
@@ -89,6 +92,7 @@
 	</view>
 </template>
 <script>
+	const app = getApp()
 	import ruiDatePicker from '@/components/rattenking-dtpicker/rattenking-dtpicker.vue';
 	import ldSelect from '@/components/ld-select/ld-select.vue'
 	import uniFab from '@/components/uni-fab/uni-fab.vue';
@@ -100,9 +104,37 @@
 	import {
 		mapState
 	} from 'vuex';
-	var tsc = require("@/util/ble/tsc.js");
+	/* var tsc = require("@/util/ble/tsc.js");
 	var esc = require("@/util/ble/esc.js");
-	var encode = require("@/util/ble/encoding.js");
+	var encode = require("@/util/ble/encoding.js"); */
+	import * as zksdk from '@/util/bluetoolth';
+	var util = require("../../../util/util.js");
+	var gbk = require('../../../util/printUtil-GBK.js');
+	var pako = require('../../../util/pako/index.js');
+	var recArrayBuff = new ArrayBuffer(256);
+	var recLen = 0;
+	const errMsg = {
+		10000: '未初始化蓝牙模块',
+		10001: '蓝牙未打开',
+		10002: '没有找到指定设备',
+		10003: '连接失败',
+		10004: '没有找到指定服务',
+		10005: '没有找到指定特征值',
+		10006: '当前连接已断开',
+		10007: '当前特征值不支持此操作',
+		10008: '系统上报异常',
+		10009: '系统版本低于 4.3 不支持BLE'
+	};
+	function debounce(func, wait) {
+		let timer = null;
+		return function(opt) {
+			clearTimeout(timer);
+			timer = setTimeout(() => {
+				func && func.call(this, opt);
+			}, wait || 60);
+		};
+	}
+	
 	export default {
 		components: {
 			ruiDatePicker,
@@ -120,6 +152,7 @@
 				onoff: true,
 				isClick: false,
 				loadModal: false,
+				btn_disabled: true,
 				modalName: null,
 				formatName: 'fName',
 				form: {
@@ -153,10 +186,15 @@
 				buffSize: [],
 				buffIndex: 0,
 				printNum: [],
+				printData: [],
 				printNumIndex: 0,
 				printerNum: 1,
 				currentPrint: 1,
 				isReceiptSend: false,
+				deviceId: '',
+				serviceId: '',
+				writeId: '',
+				readId: '',
 				isLabelSend: false
 			};
 		},
@@ -164,11 +202,12 @@
 		onLoad: function(option) {
 			let me = this
 			me.isClick = false;
+			me.$set(me,'btn_disabled',true)
 			if (JSON.stringify(option) != "{}") {
 				this.isOrder = true
 				var obj = JSON.parse(decodeURIComponent(option.obj))
-				this.fetchData(obj[9])
-				this.paramsFid = obj[9]
+				this.fetchData(obj[6])
+				this.paramsFid = obj[6]
 			}
 		},
 		onUnload() {
@@ -194,16 +233,22 @@
 						success: function(res) { // res - 各种参数
 							let info = uni.createSelectorQuery().select(".getheight");
 							let customHead = uni.createSelectorQuery().select(".customHead");
+							let cuBar = uni.createSelectorQuery().select(".cu-bar");
 							var infoHeight = 0;
 							var headHeight = 0;
+							var cuBarHeight = 0;
 							info.boundingClientRect(function(data) { //data - 各种参数
 								infoHeight = data.height
 							}).exec();
 							customHead.boundingClientRect(function(data) { //data - 各种参数
 								headHeight = data.height
 							}).exec();
+							cuBar.boundingClientRect(function(data) { //data - 各种参数
+								cuBarHeight = data.height
+							}).exec();
 							setTimeout(function() {
-								me.pageHeight = res.windowHeight - infoHeight - headHeight - 30
+								me.pageHeight = res.windowHeight - infoHeight - headHeight -
+									cuBarHeight - 30
 							}, 1000);
 						}
 					});
@@ -223,7 +268,10 @@
 			this.oneTimeData = list[0];
 			this.printNum = numList;
 			this.printerNum = numList[0];
-
+			this.bindViewTap({
+									name: 'CC3_6065L',
+									deviceId: 'C0:16:40:69:60:65'
+								})
 		},
 		onShow() {
 			let that = this;
@@ -232,8 +280,6 @@
 			uni.getImageInfo({
 				src: that.imageSrc,
 				success(res) {
-					console.log(res.width)
-					console.log(res.height)
 					width = res.width
 					height = res.height
 					that.canvasWidth = res.width;
@@ -249,6 +295,235 @@
 			ctx.draw();
 		},
 		methods: {
+			textInput(e,item){
+				this.$set(item,'amount', e.detail.value)
+			},
+			//----打印二维码-------
+			async bindViewTap2(item,printIndex) {
+				console.log("开始打印")
+				var that = this;
+				let strCmd1 = zksdk.CreatCPCLPage(450, 496, 1);
+				strCmd1 += zksdk.addCPCLLocation(2);
+				let strCmd2 = zksdk.addCPCLQRCode(0, 0, 'M', 2, 10, "http://ylkd.gzfzdev.com:8090?type=1&code="+item.pickCode);
+				let strCmd3 = zksdk.addCPCLText(10, 340, '56', '0', 0, "发货单："+item.billNo);
+				strCmd3 += zksdk.addCPCLText(10, 375, '56', '0', 0, "箱码："+item.pickCode);
+				strCmd3 += zksdk.addCPCLText(10, 410, '56', '0', 0, "收货请扫码");
+				strCmd3 += zksdk.addCPCLPrint();
+				var byte1 = gbk.strToGBKByte(strCmd1);
+				var byte2 = gbk.stringToArrayBuffer(strCmd2);
+				var byte3 = gbk.strToGBKByte(strCmd3);
+				var bytes = new ArrayBuffer(byte1.byteLength + byte2.byteLength + byte3.byteLength);
+				var dv = new DataView(bytes);
+				var dv1 = new DataView(byte1);
+				var dv2 = new DataView(byte2);
+				var dv3 = new DataView(byte3);
+				for (var i = 0; i < byte1.byteLength; i++) {
+					dv.setInt8(i, dv1.getInt8(i));
+				}
+				for (var i = 0; i < byte2.byteLength; i++) {
+					dv.setInt8(byte1.byteLength + i, dv2.getInt8(i));
+				}
+				for (var i = 0; i < byte3.byteLength; i++) {
+					dv.setInt8(byte1.byteLength + byte2.byteLength + i, dv3.getInt8(i));
+				}
+				bytes = pako.myGzip(bytes);
+				var datalen = 20;
+				if (app.globalData.platform == 'ios') {
+					console.log('platform:', app.globalData.platform)
+					datalen = 120;
+				}
+				const opt = {
+					deviceId: this.deviceId,
+					serviceId: this.serviceId,
+					characteristicId: this.writeId,
+					value: bytes,
+					lasterSuccess: this.onSendSuccess,
+					onceLength: datalen 
+				}; 
+				console.log(opt)
+				await zksdk.sendDataToDevice(opt,printIndex);
+			},
+			//---数据全部发送成功回调----
+			onSendSuccess: function(printIndex) {
+				console.log("onSendSuccess");
+				console.log(printIndex);
+				let that = this
+				that.printData.splice(printIndex, 1)
+				for (let i = 0; i < that.printData.length; i++) {
+					that.bindViewTap2(that.printData[i],i);
+				}
+			}, 
+			//链接蓝牙
+			bindViewTap: function(e) {
+				zksdk.openBlue().then((res) => {
+						//搜寻设备
+						zksdk.startBluetoothDevicesDiscovery({
+							allowDuplicatesKey: false,
+							interval: 5000
+						});
+					})
+					.catch((res) => {
+						const coode = res.errCode ? res.errCode.toString() : '';
+						const msg = errMsg[coode];
+						uni.showToast({
+							title: msg || coode,
+							icon: 'none',
+						});
+					});
+				//----关闭扫描蓝牙设备----
+				zksdk.stopBlueDevicesDiscovery();
+				this.deviceId = e.deviceId;
+				var name = e.name || e.localName;
+				// 监听设备的连接状态
+				uni.onBLEConnectionStateChange(function(res) {
+					console.log(`device ${res.deviceId} state has changed, connected: ${res.connected}`)
+				})
+				zksdk.createBLEConnection(e.deviceId, this.onConnectSuccess, this.onConnectFail);
+				console.log("bindViewTap end")
+			}, 
+				//---连接成功----
+			onConnectSuccess(res) {
+				var that = this;
+				console.log('onConnectSuccess', res);
+				zksdk.getBLEDeviceServices(that.deviceId, this.onGetServicesSuccess, this.onGetServicesFail);
+			},
+			//---连接失败----
+			onConnectFail(res) {
+				uni.showToast({
+					title: '连接失败',
+					icon: 'none',
+				});
+				uni.hideNavigationBarLoading();
+				console.log('onConnectFail', res);
+			},
+			//---Services获取成功----
+			onGetServicesSuccess(res) {
+				var that = this;
+				console.log('onGetServicesSuccess', res);
+				console.log( res);
+				this.$set(this,'btn_disabled',false)
+				zksdk.getDeviceCharacteristics(that.deviceId, res.serviceId, this.onGetCharacterSuccess, this
+					.onGetCharacterFail);
+			},
+			//---Services获取失败----
+			onGetServicesFail(res) {
+				uni.showToast({
+					title: 'Services获取失败',
+					icon: 'none',
+				});
+				uni.hideNavigationBarLoading();
+				console.log('onGetServicesFail', res);
+			},
+			async onGetCharacterSuccess(res) {
+				let that = this
+				console.log('onGetCharacterSuccess servid ', res.serviceId);
+				console.log('write character ', res.writeId);
+				console.log('read character ', res.readId);
+				this.$set(this,'serviceId', res.serviceId)
+				this.$set(this,'writeId', res.writeId) 
+				this.$set(this,'readId', res.readId)
+				//-----打开状态通知功能------
+				const opt = {
+					deviceId: this.deviceId,
+					serviceId: this.serviceId,  
+					characteristicId: this.readId,
+				};
+				
+				console.log(123333)
+				zksdk.onGetBLECharacteristicValueChange(opt, this.onGetBLEValueChange);
+			},
+			//---Characteristics获取失败----
+			onGetCharacterFail(res) {
+				uni.showToast({
+					title: 'Characteristics获取失败',
+					icon: 'none',
+				});
+				uni.hideNavigationBarLoading();
+				console.log('onGetCharacterFail', res);
+			},
+			//------Characteristic信息变化回调------- 
+			onGetBLEValueChange: function(res) {
+				var that = this;
+				console.log(`characteristic ${res.characteristicId} has changed, now is ${res.value}`)
+				console.log(util.ab2hex(res.value))
+				//if (res.characteristicId == `0000FFF1-0000-1000-8000-00805F9B34FB`)
+				{
+					var view1 = new DataView(res.value);
+					//console.log(res.value.byteLength);
+					//console.log(view1.getUint8(0));
+					//console.log(view1.getUint8(2));
+					if (res.value.byteLength >= 4 && view1.getUint8(0) == 0x1d && view1.getUint8(1) == 0x99) {
+						let strSta = " ";
+						if (view1.getUint8(2) == 0) strSta = "正常";
+						if (view1.getUint8(2) & 0x01) strSta = strSta + ' 缺纸';
+						if (view1.getUint8(2) & 0x02) strSta = strSta + ' 开盖';
+						if (view1.getUint8(2) & 0x04) strSta = strSta + ' 打印头过热';
+						if (view1.getUint8(2) & 0x08) strSta = strSta + ' 定位失败';
+						if (view1.getUint8(2) & 0x10) strSta = strSta + ' 低电';
+						if (view1.getUint8(2) & 0x20) strSta = strSta + ' 正在打印';
+						
+						that.$set(that,'State',strSta)
+					} else if (res.value.byteLength >= 9 && view1.getUint8(0) == 0x20 && view1.getUint8(1) == 0x06) {
+						//---MAC地址获取----             
+						let buffer = new ArrayBuffer(6)
+						let dataView = new DataView(buffer)
+						for (var i = 0; i < 6; i++) dataView.setUint8(i, view1.getUint8(3 + i));
+			
+						let dev_mac = buffer.join(":");
+						that.$set(that,'Dev_mac',dev_mac)
+						console.log('mac:' + dev_mac);
+					} else if (res.value.byteLength >= 3 && view1.getUint8(0) == 0x1D && view1.getUint8(1) == 0x49 &&
+						view1.getUint8(2) == 0x4A) {
+						let len = res.value.byteLength
+						let dataView = new DataView(recArrayBuff)
+						recLen = 0;
+						for (var i = 0; i < len - 3; i++) dataView.setUint8(i, view1.getUint8(3 + i));
+						recLen = len - 3;
+					} else if (res.value.byteLength >= 3 && view1.getUint8(0) == 0x30 && view1.getUint8(1) == 0x00 &&
+						view1.getUint8(1) == 0x00) {
+						console.log('Resp OK');
+					} else {
+						if (that.WiFiAPGetFlg) {
+							let len = res.value.byteLength;
+							let dataView = new DataView(recArrayBuff)
+							for (var i = 0; i < len; i++) dataView.setUint8(i + recLen, view1.getUint8(i));
+							recLen += len
+							if (view1.getUint8(len - 1) == 0 || view1.getUint8(len - 1) == 0x0A) {
+								that.WiFiAPName = util.Utf8ArrayToStr(new Uint8Array(recArrayBuff));
+								console.log(that.WiFiAPName)
+								that.$set(that,'WiFiAPName',that.WiFiAPName)
+								recLen = 0;
+							}
+							that.timer = setTimeout(
+								function() {
+									// TODO 你需要执行的任务
+									console.log('startTimer  500毫秒后执行一次任务')
+									var Scan = util.Utf8ArrayToStr(new Uint8Array(recArrayBuff));
+									console.log(Scan)
+									that.$set(that,'WiFiAPName',that.WiFiAPName)
+									recLen = 0;
+									that.WiFiAPGetFlg = false;
+								}, 500);
+						} else {
+							var Scan = util.Utf8ArrayToStr(new Uint8Array(res.value));
+							console.log(Scan)
+							that.$set(that,'State',Scan)
+							this.bindViewTap2(null, Scan);
+						}
+					}
+				}
+			},
+			comfirmData() {
+				let that = this
+				that.$nextTick(() => {
+					var data = that.$refs.citys.clickDataparent();
+					console.log(data)
+					that.$refs.citys.unClickClose();
+					data.forEach((item) => {
+						that.cityClick(item.oldData)
+					})
+				});
+			},
 			fetchData(id) {
 				const me = this
 				const obj = {
@@ -257,16 +532,17 @@
 				}
 				basic
 					.executeBillQuery({
-					data: {
-						"FilterString": "FID =" + id +"",
-						"FormId": "QDEP_Cust_PackInfo",
-						"OrderString": "FBillNo ASC,FMaterialId.FNumber ASC",
-						"FieldKeys": "FBillNo,FCreateDate,FOutBillNo,FEntity_FEntryId,FMaterialID.FNumber,FMaterialID.FName,FQty,FBoxBarcode,FPackBarCode,FID,FSrcID,FSrcEntryID",
-					}
-				}).then(res => {
+						data: {
+							"FilterString": "FID =" + id + "",
+							"FormId": "QDEP_Cust_PackInfo",
+							"OrderString": "FBillNo ASC,FMaterialId.FNumber ASC",
+							"FieldKeys": "FBillNo,FCreateDate,FOutBillNo,FEntity_FEntryId,FMaterialID.FNumber,FMaterialID.FName,FQty,FBoxBarcode,FPackBarCode,FID,FSrcID,FSrcEntryID",
+						}
+					}).then(res => {
 						let reso = res[0];
-						if (res.length>0) {
-							var beSelect=[]
+						console.log(res)
+						if (res.length > 0) {
+							var beSelect = []
 							res.forEach((item, index) => {
 								beSelect.push({
 									fid: item[10],
@@ -282,7 +558,7 @@
 								})
 							})
 							me.cuIList = [...beSelect]
-						}else{
+						} else {
 							uni.showToast({
 								icon: 'none',
 								title: reso[0]['Result']['ResponseStatus']['Errors'][0]['Message']
@@ -329,8 +605,11 @@
 				let me = this;
 				var printData = [];
 				for (var item in this.cuIList) {
-					if (printData.indexOf(this.cuIList[item]['pickCode']) == -1 && this.cuIList[item]['pickCode'] != 0) {
-						printData.push(this.cuIList[item]['pickCode'])
+					if (printData.findIndex(obj => obj.pickCode === this.cuIList[item]['pickCode']) == -1 && this.cuIList[item]['pickCode'] != 0) {
+						printData.push({
+							pickCode: this.cuIList[item]['pickCode'],
+							billNo: this.cuIList[item]['fBillNo']
+						})
 					}
 				}
 				if (printData.length > 0) {
@@ -343,29 +622,9 @@
 						success: res => {
 							if (res.confirm) {
 								me.printNumber = 0;
-								let {
-									BLEInformation
-								} = me.Bluetooth;
-
-								if (BLEInformation
-									.deviceId == "") {
-									// 用户点击确定
-									setTimeout(
-										function() {
-											uni.navigateTo({
-												url: '/pages/bleConnect/bleConnect?obj=' +
-													encodeURIComponent(
-														JSON
-														.stringify(
-															printData
-														)
-													)
-											});
-										}, 500)
-								} else {
-									me.printRes = printData
-									me.bindViewTap();
-								}
+								uni.showNavigationBarLoading();
+								me.printData = printData
+								me.bindViewTap2(me.printData[0],0)
 							}
 						}
 					})
@@ -381,9 +640,11 @@
 				let me = this;
 				var printData = [];
 				for (var item in this.cuIList) {
-					if (printData.indexOf(this.cuIList[item]['pickBigCode']) == -1 && this.cuIList[item]['pickBigCode'] !=
-						0) {
-						printData.push(this.cuIList[item]['pickBigCode'])
+					if (printData.findIndex(obj => obj.pickCode === this.cuIList[item]['pickBigCode']) == -1 && this.cuIList[item]['pickBigCode'] !=0) {
+						printData.push({
+							pickCode: this.cuIList[item]['pickBigCode'],
+							billNo: this.cuIList[item]['fBillNo']
+						})
 					}
 				}
 				if (printData.length > 0) {
@@ -396,30 +657,9 @@
 						success: res => {
 							if (res.confirm) {
 								me.printNumber = 0;
-								let {
-									BLEInformation
-								} = me.Bluetooth;
-								me.form.fdate = me.getDay('', 0).date
-								me.form.entry = me.cuIList
-								if (BLEInformation
-									.deviceId == "") {
-									// 用户点击确定
-									setTimeout(
-										function() {
-											uni.navigateTo({
-												url: '/pages/bleConnect/bleConnect?obj=' +
-													encodeURIComponent(
-														JSON
-														.stringify(
-															printData
-														)
-													)
-											});
-										}, 500)
-								} else {
-									me.printRes = printData
-									me.bindViewTap();
-								}
+								uni.showNavigationBarLoading();
+								me.printData = printData
+								me.bindViewTap2(me.printData[0],0)
 							}
 						}
 					})
@@ -435,8 +675,9 @@
 				this.form.fprocessnote = val.detail.value;
 			},
 			cityClick(item) {
-				console.log(item)
-				this.cuIList.push({...item})
+				this.cuIList.push({
+					...item
+				})
 				this.modalName = null
 			},
 			clearList() {
@@ -464,9 +705,29 @@
 				let orderParams = []
 				var number = 0;
 				for (var element in list) {
-					if(orderParams.indexOf(list[element]['fid'])==-1){
+					console.log(orderParams.findIndex(obj => obj.fid === list[element]['fid']))
+					if (orderParams.findIndex(obj => obj.fid === list[element]['fid']) == -1) {
 						//提交单据次数
-						orderParams.push(list[element]['fid'])
+						orderParams.push({
+							fid: list[element]['fid'],
+							FSrcEntryID: [{
+								FENTRYID: list[element]['fEntryId'],
+								FEntryOutStatus: "待收货",
+								FEntryPackedQty: Number(list[element]['amount'])+Number(list[element]['packedQty'])
+							}]
+						})
+					}else{
+						let entryData = orderParams[orderParams.findIndex(obj => obj.fid === list[element]['fid'])]['FSrcEntryID']
+						if(entryData.findIndex(obj => obj.FENTRYID === list[element]['fEntryId']) == -1){
+							entryData.push({
+									FENTRYID: list[element]['fEntryId'],
+									FEntryOutStatus: "待收货",
+									FEntryPackedQty: Number(list[element]['amount'])+Number(list[element]['packedQty'])
+								})
+						}else{
+							entryData[entryData.findIndex(obj => obj.FENTRYID === list[element]['fEntryId'])]['FEntryPackedQty'] += Number(list[element]['amount'])
+							
+						}
 					}
 					if (list[element]['pickCode'] == 0 || list[element]['pickBigCode'] == 0) {
 						number++;
@@ -493,6 +754,7 @@
 						title: '装箱未完成',
 					});
 				}
+				console.log(orderParams)
 				uni.showNavigationBarLoading();
 				basic
 					.kdSave({
@@ -510,152 +772,222 @@
 						let saveReso = saveRes[0];
 						if (saveRes['Result']['ResponseStatus']['IsSuccess']) {
 							console.log(orderParams)
-							for(var item in orderParams){
-								basic.unAudit({
-										"formid": "SAL_OUTSTOCK",
-										"data": {
-											"Ids": orderParams[item],
+							for (var item in orderParams) {
+								//保存
+								basic.kdSave({
+									"formid": "SAL_OUTSTOCK",
+									"data": {
+										"NeedUpDataFields": ["FEntity"],
+										"NeedReturnFields": ["FEntity"],
+										"IsDeleteEntry": false,
+										"Model": {
+											"FID": orderParams[item]['fid'],
+											"FOutStatus": "待收货",
+											"FEntity":orderParams[item]['FSrcEntryID']
 										},
-									}).then(unAuditRes => {
-										let unAuditReso = unAuditRes[0];
-										if (unAuditRes != null && unAuditRes['Result']['ResponseStatus'][
-												'IsSuccess'
-											]) {
-											//保存
-											basic.kdSave({
-												"formid": "SAL_OUTSTOCK",
-												"data": {
-													"NeedUpDataFields": ["FEntity"],
-													"NeedReturnFields": ["FEntity"],
-													"IsDeleteEntry": false,
-													"Model": {
-														"FID": orderParams[item],
-														"FOutStatus": "待收货",
-													},
-												}
-											}).then(
-												keepRes => {
-													let keepReso = keepRes[0];
-													if (keepRes != null && keepRes['Result'][
-															'ResponseStatus'
-														]['IsSuccess']) {
-														//提交
-														basic.kdSubmit({
-															"formid": "SAL_OUTSTOCK",
-															"data": {
-																"Ids": orderParams[item],
-															},
-														}).then(submitRes => {
-															let submitReso = submitRes[0];
-															if (submitRes != null && submitRes['Result'][
-																	'ResponseStatus'
-																]['IsSuccess']) {
-																//审核
-																basic.kdAudit({
-																	"formid": "SAL_OUTSTOCK",
-																	"data": {
-																		"Ids": orderParams[item],
-																	},
-																}).then(
-																	auditRes => {
-																		let auditReso = auditRes[0];
-																		if (auditRes != null && auditRes['Result'][
-																				'ResponseStatus'
-																			]['IsSuccess']) {
-																			if(item+1==orderParams.length){
-																				uni.hideNavigationBarLoading();
-																				uni.showToast({
-																					title: "保存成功",
-																					icon: 'success',
-																					duration: 2000,
-																					mask: true,
-																					success: function() {
-																						setTimeout(function() {
-																							//要延时执行的代码
-																							uni.navigateBack();
-																						}, 2000) //延迟时间
-																					}
-																				});
-																			}
-																		} else {
-																			this.isClick = false
-																			uni.hideNavigationBarLoading();
-																			uni.showToast({
-																				icon: 'none',
-																				title: auditRes[
-																						'Result'
-																					]
-																					[
-																						'ResponseStatus'
-																					]
-																					[
-																						'Errors'
-																					]
-																					[
-																						0
-																					]
-																					[
-																						'Message'
-																					]
-																			})
-																		}
-																	});
-															} else {
-																this.isClick = false
-																uni.hideNavigationBarLoading();
-																uni.showToast({
-																	icon: 'none',
-																	title: submitRes[
-																			'Result'
-																		][
-																			'ResponseStatus'
-																		][
-																			'Errors'
-																		]
-																		[0][
-																			'Message'
-																		]
-																})
-															}
-														});
-								
-													} else {
-														this.isClick = false
-														uni.hideNavigationBarLoading();
-														uni.showToast({
-															icon: 'none',
-															title: keepRes[
-																	'Result'
-																]
-																[
-																	'ResponseStatus'
-																]
-																[
-																	'Errors'
-																]
-																[
-																	0
-																]
-																[
-																	'Message'
-																]
-														})
+									}
+								}).then(
+									keepRes => {
+										console.log(keepRes)
+										let keepReso = keepRes[0];
+										if (keepRes != null && keepRes['Result'][
+												'ResponseStatus'
+											]['IsSuccess']) {
+											if (Number(item) + 1 == orderParams.length) {
+												uni.hideNavigationBarLoading(); 
+												uni.showToast({
+													title: "保存成功",
+													icon: 'success',
+													duration: 2000,
+													mask: true,
+													success: function() {
+														setTimeout(function() {
+															//要延时执行的代码
+															uni.navigateBack();
+														}, 2000) //延迟时间
 													}
 												});
+											}
 										} else {
 											this.isClick = false
 											uni.hideNavigationBarLoading();
 											uni.showToast({
 												icon: 'none',
-												title: unAuditRes['Result'][
-													'ResponseStatus'
-												]['Errors'][0]['Message']
+												title: keepRes[
+														'Result'
+													]
+													[
+														'ResponseStatus'
+													]
+													[
+														'Errors'
+													]
+													[
+														0
+													]
+													[
+														'Message'
+													]
 											})
 										}
 									});
-								
+
+								/* basic.unAudit({
+									"formid": "SAL_OUTSTOCK",
+									"data": {
+										"Ids": orderParams[item],
+									},
+								}).then(unAuditRes => {
+									let unAuditReso = unAuditRes[0];
+									if (unAuditRes != null && unAuditRes['Result']['ResponseStatus'][
+											'IsSuccess'
+										]) {
+										//保存
+										basic.kdSave({
+											"formid": "SAL_OUTSTOCK",
+											"data": {
+												"NeedUpDataFields": ["FEntity"],
+												"NeedReturnFields": ["FEntity"],
+												"IsDeleteEntry": false,
+												"Model": {
+													"FID": orderParams[item],
+													"FOutStatus": "待收货",
+												},
+											}
+										}).then(
+											keepRes => {
+												let keepReso = keepRes[0];
+												if (keepRes != null && keepRes['Result'][
+														'ResponseStatus'
+													]['IsSuccess']) {
+													//提交
+													basic.kdSubmit({
+														"formid": "SAL_OUTSTOCK",
+														"data": {
+															"Ids": orderParams[item],
+														},
+													}).then(submitRes => {
+														let submitReso = submitRes[0];
+														if (submitRes != null && submitRes[
+																'Result'][
+																'ResponseStatus'
+															]['IsSuccess']) {
+															//审核
+															basic.kdAudit({
+																"formid": "SAL_OUTSTOCK",
+																"data": {
+																	"Ids": orderParams[
+																		item],
+																},
+															}).then(
+																auditRes => {
+																	let auditReso =
+																		auditRes[0];
+																	if (auditRes != null &&
+																		auditRes['Result'][
+																			'ResponseStatus'
+																		]['IsSuccess']) {
+																		if (item + 1 ==
+																			orderParams
+																			.length) {
+																			uni
+																		.hideNavigationBarLoading();
+																			uni.showToast({
+																				title: "保存成功",
+																				icon: 'success',
+																				duration: 2000,
+																				mask: true,
+																				success: function() {
+																					setTimeout
+																						(function() {
+																								//要延时执行的代码
+																								uni
+																							.navigateBack();
+																							},
+																							2000
+																							) //延迟时间
+																				}
+																			});
+																		}
+																	} else {
+																		this.isClick =
+																			false
+																		uni
+																	.hideNavigationBarLoading();
+																		uni.showToast({
+																			icon: 'none',
+																			title: auditRes[
+																					'Result'
+																				]
+																				[
+																					'ResponseStatus'
+																				]
+																				[
+																					'Errors'
+																				]
+																				[
+																					0
+																				]
+																				[
+																					'Message'
+																				]
+																		})
+																	}
+																});
+														} else {
+															this.isClick = false
+															uni.hideNavigationBarLoading();
+															uni.showToast({
+																icon: 'none',
+																title: submitRes[
+																		'Result'
+																	][
+																		'ResponseStatus'
+																	][
+																		'Errors'
+																	]
+																	[0][
+																		'Message'
+																	]
+															})
+														}
+													});
+
+												} else {
+													this.isClick = false
+													uni.hideNavigationBarLoading();
+													uni.showToast({
+														icon: 'none',
+														title: keepRes[
+																'Result'
+															]
+															[
+																'ResponseStatus'
+															]
+															[
+																'Errors'
+															]
+															[
+																0
+															]
+															[
+																'Message'
+															]
+													})
+												}
+											});
+									} else {
+										this.isClick = false
+										uni.hideNavigationBarLoading();
+										uni.showToast({
+											icon: 'none',
+											title: unAuditRes['Result'][
+												'ResponseStatus'
+											]['Errors'][0]['Message']
+										})
+									}
+								}); */
 							}
-							
 						} else {
 							this.isClick = false
 							uni.hideNavigationBarLoading();
@@ -667,7 +999,53 @@
 					});
 			},
 			showModal(index, item) {
-				this.modalName = 'Modal'
+				let that = this
+				basic
+					.executeBillQuery({
+						data: {
+							"FilterString": "FBillNo like '%" + that.form.FBillNo + "%' and FRealQty>FEntryPackedQty",
+							"FormId": "SAL_OUTSTOCK",
+							"OrderString": "FBillNo ASC,FMaterialId.FNumber ASC",
+							"FieldKeys": "FBillNo,FCustomerID.FNumber,FCustomerID.FName,FDate,FEntity_FEntryId,FMaterialId.FNumber,FMaterialId.FName,FMaterialId.FSpecification,FSaleOrgId.FNumber,FSaleOrgId.FName,FUnitID.FNumber,FUnitID.FName,FRealQty,FSrcBillNo,FID,FEntryPackedQty",
+						}
+					}).then(resPoll => {
+						let reso = resPoll[0];
+						if (resPoll.length > 0) {
+							var beSelect = []
+							resPoll.forEach((item, index) => {
+								beSelect.push({
+									fid: item[14],
+									fEntryId: item[4],
+									fName: item[6]+'('+item[12]+')',
+									fNumber: item[5],
+									fQty: item[12],
+									fBillNo: item[0],
+									fSpecification: item[7],
+									amount: item[12],
+									pickCode: 0,
+									pickBigCode: 0,
+									packedQty: item[15],
+								})
+							})
+							that.toBeSelected = [...beSelect]
+							that.$forceUpdate()
+							that.modalName = 'Modal'
+						} else {
+							uni.showToast({
+								icon: 'none',
+								title: reso[0]['Result']['ResponseStatus']['Errors'][0][
+									'Message'
+								]
+							})
+						}
+					}).catch(err => {
+						uni.showToast({
+							icon: 'none',
+							title: err[0][0]['Result']['ResponseStatus']['Errors'][0][
+								'Message'
+							],
+						});
+					})
 			},
 			hideModal(e) {
 				this.modalName = null
@@ -708,14 +1086,13 @@
 						basic
 							.executeBillQuery({
 								data: {
-									"FilterString": "FBillNo like '%" + res.result + "%'",
+									"FilterString": "FBillNo like '%" + res.result + "%' and FRealQty>FEntryPackedQty",
 									"FormId": "SAL_OUTSTOCK",
 									"OrderString": "FBillNo ASC,FMaterialId.FNumber ASC",
-									"FieldKeys": "FBillNo,FCustomerID.FNumber,FCustomerID.FName,FDate,FEntity_FEntryId,FMaterialId.FNumber,FMaterialId.FName,FMaterialId.FSpecification,FSaleOrgId.FNumber,FSaleOrgId.FName,FUnitID.FNumber,FUnitID.FName,FRealQty,FSrcBillNo,FID",
+									"FieldKeys": "FBillNo,FCustomerID.FNumber,FCustomerID.FName,FDate,FEntity_FEntryId,FMaterialId.FNumber,FMaterialId.FName,FMaterialId.FSpecification,FSaleOrgId.FNumber,FSaleOrgId.FName,FUnitID.FNumber,FUnitID.FName,FRealQty,FSrcBillNo,FID,FEntryPackedQty",
 								}
 							}).then(resPoll => {
 								let reso = resPoll[0];
-								console.log(resPoll)
 								if (resPoll.length > 0) {
 									that.form.FBillNo = res.result
 									var beSelect = []
@@ -723,39 +1100,54 @@
 										beSelect.push({
 											fid: item[14],
 											fEntryId: item[4],
-											fName: item[6],
+											fName: item[6]+'('+item[12]+')',
 											fNumber: item[5],
 											fQty: item[12],
 											fBillNo: item[0],
 											fSpecification: item[7],
-											amount: 1,
+											amount: item[12],
 											pickCode: 0,
 											pickBigCode: 0,
+											packedQty: item[15],
 										})
 									})
 									that.toBeSelected = [...beSelect]
-									that.showModal();
+									that.modalName = 'Modal'
 								} else {
-									uni.showToast({
-										icon: 'none',
-										title: reso[0]['Result']['ResponseStatus']['Errors'][0][
-											'Message'
-										]
-									})
+									if(resPoll.length == 0){
+										uni.showToast({
+											icon: 'none',
+											title: "该单已全部装箱"
+										})
+									}else{
+										uni.showToast({
+											icon: 'none',
+											title: reso[0]['Result']['ResponseStatus']['Errors'][0][
+												'Message'
+											]
+										})
+									}
 								}
 							}).catch(err => {
-								uni.showToast({
-									icon: 'none',
-									title: err[0][0]['Result']['ResponseStatus']['Errors'][0][
-										'Message'
-									],
-								});
+								if(err=="TypeError: Cannot read property '0' of undefined"){
+									uni.showToast({
+										icon: 'none',
+										title: "该单已全部装箱"
+									})
+								}else{
+									uni.showToast({
+										icon: 'none',
+										title: err[0][0]['Result']['ResponseStatus']['Errors'][0][
+											'Message'
+										],
+									});
+								}
 							})
 					}
 				});
 			},
 			//绑定蓝牙
-			bindViewTap(e) {
+			/* bindViewTap(e) {
 				let that = this;
 				let {
 					BLEInformation
@@ -782,10 +1174,10 @@
 					fail(e) {
 						console.log('createBLEConnection error:', e)
 						uni.hideLoading()
-						if(e.message =="already connect"){
+						if (e.message == "already connect") {
 							BLEInformation.deviceId = title;
 							that.getSeviceId()
-						}else{
+						} else {
 							that.errorCodeTip(e.errCode);
 							uni.navigateTo({
 								url: '/pages/bleConnect/bleConnect?obj=' +
@@ -799,7 +1191,7 @@
 						}
 					}
 				})
-			},
+			}, */
 			//获取蓝牙设备所有服务(service)。
 			getSeviceId() {
 				let that = this;
@@ -1109,7 +1501,7 @@
 
 	.box {
 		width: 100%;
-
+		height: auto;
 	}
 
 	.btn-groups {

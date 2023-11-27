@@ -10,7 +10,7 @@
 				</view>
 			</view>
 			<view class="nav-list">
-				<navigator hover-class="none" :url="'/pages/component/' + item.path" class="nav-li"
+				<navigator hover-class="none" :url="'/pages/' + item.path" class="nav-li"
 					navigateTo :class="'bg-' + item.color" v-for="(item, index) in elements" :key="index">
 					<view class="nav-title">{{ item.name }}</view>
 					<text :class="'cuIcon-' + item.cuIcon"></text>
@@ -49,9 +49,14 @@
 					{
 						name: "装箱管理",
 						color: "olive",
-						path: "workshop/dispatching",
+						path: "component/workshop/dispatching",
 						cuIcon: "pick",
-					}
+					},/* {
+						name: "打印测试",
+						color: "olive",
+						path: "index/print",
+						cuIcon: "pick",
+					}, */
 				]
 			};
 		},

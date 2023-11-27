@@ -84,7 +84,7 @@ export default {
 		},
 		downWgt: function() {
 			var that = this;
-			var downloadApkUrl = service.getUrls().url+'/pda/fzwmxy.apk';
+			var downloadApkUrl = 'http://www.gzfzdev.com/app/yllp.apk';
 			var dtask = plus.downloader.createDownload(downloadApkUrl, {}, function(d, status) {
 				// 下载完成
 				if (status == 200) {
@@ -135,7 +135,7 @@ export default {
 		AndroidCheckUpdate() {
 			var that = this;
 			uni.request({
-				url: service.getUrls().url+'/pda/output.json', //获取最新版本号
+				url: 'http://www.gzfzdev.com/app/output-metadata.json', //获取最新版本号
 				method: 'GET',
 				data: {}, 
 				success: res => {

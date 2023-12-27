@@ -141,8 +141,8 @@ export default {
 				success: res => {
 					/* basic.getAndroidVersion.then(res => {
 					if (res.success) { */
-					console.log(res.data[0].apkData.versionName +','+ that.version)
-					if (res.data[0].apkData.versionName > that.version) {
+					console.log(res.data.elements[0].versionName +','+ that.version)
+					if (res.data.elements[0].versionName > that.version) {
 						//TODO 此处判断是否为 WIFI连接状态
 						if (plus.networkinfo.getCurrentType() != 3) {
 							uni.showToast({

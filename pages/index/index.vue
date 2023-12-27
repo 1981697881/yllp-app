@@ -140,7 +140,7 @@
 					method: 'GET',
 					data: {},
 					success: res => {
-						if (res.data[0].apkData.versionNamen > that.version) {
+						if (res.data.elements[0].versionName > that.version) {
 							if (plus.networkinfo.getCurrentType() != 3) {
 								uni.showToast({
 									title: '有新的版本发布，检测到您目前非Wifi连接，为节约您的流量，程序已停止自动更新，将在您连接WIFI之后重新检测更新。',
@@ -197,7 +197,7 @@
 					data: {},
 					success: resMz => {
 						console.log(resMz);
-						var server_version = resMz.data[0].apkData.versionName;
+						var server_version = resMz.data.elements[0].versionName;
 						var currTimeStamp = new Date().getTime();
 						// 判断缓存时间
 						uni.getStorage({

@@ -29,7 +29,7 @@
 				</view>
 			</view>
 		</view>
-		<view class="cu-modal show" v-if="modalName=='Modal'" ><!-- :class="modalName=='Modal'?'show':''" -->
+		<view class="cu-modal show" v-if="modalName=='Modal'"><!-- :class="modalName=='Modal'?'show':''" -->
 			<view class="cu-dialog" style="height: 80%;margin-top: 20%;">
 				<view class="cu-bar bg-white justify-between" style="height: 90upx;">
 					<view class="action" @tap="comfirmData">
@@ -47,16 +47,18 @@
 			</view>
 		</view>
 		<scroll-view scroll-y class="page" :style="{ 'height': pageHeight + 'px' }">
-			<uni-table border stripe emptyText="暂无更多数据">
+			<uni-table type="selection" border stripe emptyText="暂无更多数据" @selection-change="selectionChange">
 				<!-- 表头行 -->
 				<uni-tr>
 					<uni-th align="center">发货单号</uni-th>
 					<uni-th align="center">物料名称</uni-th>
 					<uni-th align="center">规格型号</uni-th>
 					<uni-th align="center">单据数量</uni-th>
-					<uni-th align="center">数量</uni-th>
+					<uni-th align="center">剩余数量</uni-th>
+					<uni-th align="center">发货数量</uni-th>
 					<uni-th align="center">装箱条码</uni-th>
 					<uni-th align="center">装箱条码(大)</uni-th>
+					<uni-th align="center">操作</uni-th>
 				</uni-tr>
 				<!-- 表格数据行 -->
 				<uni-tr v-for="(item,index) in cuIList" :key="index">
@@ -64,9 +66,15 @@
 					<uni-td align="center">{{item['fName']}}</uni-td>
 					<uni-td align="center">{{item['fSpecification']}}</uni-td>
 					<uni-td align="center">{{item['fQty']}}</uni-td>
-					<uni-td align="center"><input type="number" :value="item['amount']" @input="textInput($event,item)" placeholder="请输入"/></uni-td>
-					<uni-td align="center">{{item['pickCode']}}</uni-td>
+					<uni-td align="center">{{item['fResidueQty']}}</uni-td>
+					<uni-td align="center"><input type="number" :value="item['amount']" @input="textInput($event,item)"
+							placeholder="请输入" /></uni-td>
+					<uni-td align="center" >{{item['pickCode']}}</uni-td>
 					<uni-td align="center">{{item['pickBigCode']}}</uni-td>
+					<uni-td align="center">
+						<button class="cu-btn round sm bg-cyan margin-right-sm" @tap="clearItem(item)">清空</button>
+						<button class="cu-btn round sm bg-red" @tap="delItem(item,index)">删除</button>
+					</uni-td>
 				</uni-tr>
 			</uni-table>
 			<view class="cu-bar tabbar shadow foot">
@@ -125,6 +133,7 @@
 		10008: '系统上报异常',
 		10009: '系统版本低于 4.3 不支持BLE'
 	};
+
 	function debounce(func, wait) {
 		let timer = null;
 		return function(opt) {
@@ -134,7 +143,7 @@
 			}, wait || 60);
 		};
 	}
-	
+
 	export default {
 		components: {
 			ruiDatePicker,
@@ -187,6 +196,7 @@
 				buffIndex: 0,
 				printNum: [],
 				printData: [],
+				selectedIndexs: [],
 				printNumIndex: 0,
 				printerNum: 1,
 				currentPrint: 1,
@@ -202,12 +212,13 @@
 		onLoad: function(option) {
 			let me = this
 			me.isClick = false;
-			me.$set(me,'btn_disabled',true)
+			me.$set(me, 'btn_disabled', true)
 			if (JSON.stringify(option) != "{}") {
 				this.isOrder = true
 				var obj = JSON.parse(decodeURIComponent(option.obj))
-				this.fetchData(obj[6])
-				this.paramsFid = obj[6]
+				console.log(obj)
+				this.fetchData(obj[9])
+				this.paramsFid = obj[9]
 			}
 		},
 		onUnload() {
@@ -269,9 +280,12 @@
 			this.printNum = numList;
 			this.printerNum = numList[0];
 			this.bindViewTap({
-									name: 'CC3_6065L',
-									deviceId: 'C0:16:40:69:60:65'
-								})
+				name: 'CC3_6065L',
+				deviceId: 'C0:16:40:69:60:65'
+			})/* this.bindViewTap({
+				name: 'M35_3995L',
+				deviceId: '01:19:96:58:39:95'
+			}) */
 		},
 		onShow() {
 			let that = this;
@@ -295,19 +309,77 @@
 			ctx.draw();
 		},
 		methods: {
-			textInput(e,item){
-				this.$set(item,'amount', e.detail.value)
+			// 多选处理
+			selectedItems() {
+				return this.selectedIndexs.map(i => this.cuIList[i])
+			},
+			// 多选
+			selectionChange(e) {
+				console.log(e.detail.index)
+				this.selectedIndexs = e.detail.index
+			},
+			delItem(item,index) {
+				console.log(index);
+				let that = this;
+				uni.showModal({
+					title: "提示",
+					content: "是否删除："+item.fName+"，行",
+					showCancel: true,
+					cancelText: '取消',
+					confirmText: '确定',
+					success: res => {
+						if (res.confirm) {
+							if(that.selectedIndexs.indexOf(index) != -1){
+								that.selectedIndexs.splice(that.selectedIndexs.indexOf(index),1)
+							}
+							that.cuIList.splice(index,1)
+							console.log(that.cuIList);
+							console.log(that.selectedIndexs);
+						}
+					}
+				})
+				
+			},
+			clearItem(item) {
+				let that = this;
+				if(item.pickBigCode != 0){
+					uni.showModal({
+						title: "提示",
+						content: "是否清空："+item.fName+"，的装箱码",
+						showCancel: true,
+						cancelText: '取消',
+						confirmText: '确定',
+						success: res => {
+							if (res.confirm) {
+								that.$set(item,"pickBigCode",0)
+							}
+						}
+					})
+				}else{
+					uni.showToast({
+						title: "无装箱码",
+						icon: 'none',
+					});
+				}
+			},
+			textInput(e, item) {
+				this.$set(item, 'amount', e.detail.value)
 			},
 			//----打印二维码-------
-			async bindViewTap2(item,printIndex) {
+			async bindViewTap2(item, printIndex, type) {
 				console.log("开始打印")
 				var that = this;
 				let strCmd1 = zksdk.CreatCPCLPage(450, 496, 1);
 				strCmd1 += zksdk.addCPCLLocation(2);
-				let strCmd2 = zksdk.addCPCLQRCode(0, 0, 'M', 2, 10, "http://ylkd.gzfzdev.com:8090?type=1&code="+item.pickCode);
-				let strCmd3 = zksdk.addCPCLText(10, 340, '56', '0', 0, "发货单："+item.billNo);
-				strCmd3 += zksdk.addCPCLText(10, 375, '56', '0', 0, "箱码："+item.pickCode);
-				strCmd3 += zksdk.addCPCLText(10, 410, '56', '0', 0, "收货请扫码");
+				let strCmd2 = zksdk.addCPCLQRCode(0, 0, 'M', 2, 10, "http://ylkd.gzfzdev.com:8090?type=1&code=" + item
+					.pickCode);
+				let strCmd3 = zksdk.addCPCLText(10, 340, '56', '0', 0, "发货单：" + item.billNo);
+				strCmd3 += zksdk.addCPCLText(10, 375, '56', '0', 0, "箱码：" + item.pickCode);
+				if(type == 0){
+					strCmd3 += zksdk.addCPCLText(10, 410, '56', '0', 0, item.fName.substring(0, 18));
+				}else{
+					strCmd3 += zksdk.addCPCLText(10, 410, '56', '0', 0, "收货请扫码");
+				}
 				strCmd3 += zksdk.addCPCLPrint();
 				var byte1 = gbk.strToGBKByte(strCmd1);
 				var byte2 = gbk.stringToArrayBuffer(strCmd2);
@@ -338,21 +410,21 @@
 					characteristicId: this.writeId,
 					value: bytes,
 					lasterSuccess: this.onSendSuccess,
-					onceLength: datalen 
-				}; 
+					onceLength: datalen
+				};
 				console.log(opt)
-				await zksdk.sendDataToDevice(opt,printIndex);
+				await zksdk.sendDataToDevice(opt, printIndex,type);
 			},
 			//---数据全部发送成功回调----
-			onSendSuccess: function(printIndex) {
+			onSendSuccess: function(printIndex,type) {
 				console.log("onSendSuccess");
 				console.log(printIndex);
 				let that = this
 				that.printData.splice(printIndex, 1)
 				for (let i = 0; i < that.printData.length; i++) {
-					that.bindViewTap2(that.printData[i],i);
+					that.bindViewTap2(that.printData[i], i,type);
 				}
-			}, 
+			},
 			//链接蓝牙
 			bindViewTap: function(e) {
 				zksdk.openBlue().then((res) => {
@@ -380,8 +452,8 @@
 				})
 				zksdk.createBLEConnection(e.deviceId, this.onConnectSuccess, this.onConnectFail);
 				console.log("bindViewTap end")
-			}, 
-				//---连接成功----
+			},
+			//---连接成功----
 			onConnectSuccess(res) {
 				var that = this;
 				console.log('onConnectSuccess', res);
@@ -400,8 +472,8 @@
 			onGetServicesSuccess(res) {
 				var that = this;
 				console.log('onGetServicesSuccess', res);
-				console.log( res);
-				this.$set(this,'btn_disabled',false)
+				console.log(res);
+				this.$set(this, 'btn_disabled', false)
 				zksdk.getDeviceCharacteristics(that.deviceId, res.serviceId, this.onGetCharacterSuccess, this
 					.onGetCharacterFail);
 			},
@@ -419,16 +491,16 @@
 				console.log('onGetCharacterSuccess servid ', res.serviceId);
 				console.log('write character ', res.writeId);
 				console.log('read character ', res.readId);
-				this.$set(this,'serviceId', res.serviceId)
-				this.$set(this,'writeId', res.writeId) 
-				this.$set(this,'readId', res.readId)
+				this.$set(this, 'serviceId', res.serviceId)
+				this.$set(this, 'writeId', res.writeId)
+				this.$set(this, 'readId', res.readId)
 				//-----打开状态通知功能------
 				const opt = {
 					deviceId: this.deviceId,
-					serviceId: this.serviceId,  
+					serviceId: this.serviceId,
 					characteristicId: this.readId,
 				};
-				
+
 				console.log(123333)
 				zksdk.onGetBLECharacteristicValueChange(opt, this.onGetBLEValueChange);
 			},
@@ -461,16 +533,16 @@
 						if (view1.getUint8(2) & 0x08) strSta = strSta + ' 定位失败';
 						if (view1.getUint8(2) & 0x10) strSta = strSta + ' 低电';
 						if (view1.getUint8(2) & 0x20) strSta = strSta + ' 正在打印';
-						
-						that.$set(that,'State',strSta)
+
+						that.$set(that, 'State', strSta)
 					} else if (res.value.byteLength >= 9 && view1.getUint8(0) == 0x20 && view1.getUint8(1) == 0x06) {
 						//---MAC地址获取----             
 						let buffer = new ArrayBuffer(6)
 						let dataView = new DataView(buffer)
 						for (var i = 0; i < 6; i++) dataView.setUint8(i, view1.getUint8(3 + i));
-			
+
 						let dev_mac = buffer.join(":");
-						that.$set(that,'Dev_mac',dev_mac)
+						that.$set(that, 'Dev_mac', dev_mac)
 						console.log('mac:' + dev_mac);
 					} else if (res.value.byteLength >= 3 && view1.getUint8(0) == 0x1D && view1.getUint8(1) == 0x49 &&
 						view1.getUint8(2) == 0x4A) {
@@ -491,7 +563,7 @@
 							if (view1.getUint8(len - 1) == 0 || view1.getUint8(len - 1) == 0x0A) {
 								that.WiFiAPName = util.Utf8ArrayToStr(new Uint8Array(recArrayBuff));
 								console.log(that.WiFiAPName)
-								that.$set(that,'WiFiAPName',that.WiFiAPName)
+								that.$set(that, 'WiFiAPName', that.WiFiAPName)
 								recLen = 0;
 							}
 							that.timer = setTimeout(
@@ -500,14 +572,14 @@
 									console.log('startTimer  500毫秒后执行一次任务')
 									var Scan = util.Utf8ArrayToStr(new Uint8Array(recArrayBuff));
 									console.log(Scan)
-									that.$set(that,'WiFiAPName',that.WiFiAPName)
+									that.$set(that, 'WiFiAPName', that.WiFiAPName)
 									recLen = 0;
 									that.WiFiAPGetFlg = false;
 								}, 500);
 						} else {
 							var Scan = util.Utf8ArrayToStr(new Uint8Array(res.value));
 							console.log(Scan)
-							that.$set(that,'State',Scan)
+							that.$set(that, 'State', Scan)
 							this.bindViewTap2(null, Scan);
 						}
 					}
@@ -524,13 +596,13 @@
 					})
 				});
 			},
-			fetchData(id) {
+			async fetchData(id) {
 				const me = this
 				const obj = {
 					pageSize: 50,
 					pageNum: 1,
 				}
-				basic
+				await basic
 					.executeBillQuery({
 						data: {
 							"FilterString": "FID =" + id + "",
@@ -538,25 +610,56 @@
 							"OrderString": "FBillNo ASC,FMaterialId.FNumber ASC",
 							"FieldKeys": "FBillNo,FCreateDate,FOutBillNo,FEntity_FEntryId,FMaterialID.FNumber,FMaterialID.FName,FQty,FBoxBarcode,FPackBarCode,FID,FSrcID,FSrcEntryID",
 						}
-					}).then(res => {
+					}).then(async res => {
 						let reso = res[0];
 						console.log(res)
 						if (res.length > 0) {
 							var beSelect = []
-							res.forEach((item, index) => {
-								beSelect.push({
-									fid: item[10],
-									fEntryId: item[11],
-									fName: item[5],
-									fNumber: item[4],
-									fQty: 0,
-									fBillNo: item[2],
-									fSpecification: "",
-									amount: item[6],
-									pickCode: item[7],
-									pickBigCode: item[8],
-								})
-							})
+							for (var item in res) {
+								await basic
+									.executeBillQuery({
+										data: {
+											"FilterString": "FID=" + res[item][10] +
+												" and FEntity_FEntryId = " + res[item][11],
+											"FormId": "SAL_OUTSTOCK",
+											"OrderString": "FBillNo ASC,FMaterialId.FNumber ASC",
+											"FieldKeys": "FBillNo,FCustomerID.FNumber,FCustomerID.FName,FDate,FEntity_FEntryId,FMaterialId.FNumber,FMaterialId.FName,FMaterialId.F_RXDD_MulLangText,FSaleOrgId.FNumber,FSaleOrgId.FName,FUnitID.FNumber,FUnitID.FName,FRealQty,FSrcBillNo,FID,FEntryPackedQty",
+										}
+									}).then(resPoll => {
+										if (resPoll.length > 0) {
+											beSelect.push({
+												fid: res[item][10],
+												fEntryId: res[item][11],
+												fName: res[item][5],
+												fNumber: res[item][4],
+												fQty: resPoll[0][12],
+												fResidueQty: resPoll[0][12] - resPoll[0][15],
+												fBillNo: res[item][2],
+												fSpecification: "",
+												amount: res[item][6],
+												pickCode: res[item][7],
+												pickBigCode: res[item][8],
+											})
+										} else {
+											uni.showToast({
+												icon: 'none',
+												title: resPoll[0][0]['Result']['ResponseStatus'][
+													'Errors'
+												][0][
+													'Message'
+												]
+											})
+										}
+									}).catch(erro => {
+										uni.showToast({
+											icon: 'none',
+											title: erro[0][0]['Result']['ResponseStatus']['Errors']
+												[0][
+													'Message'
+												],
+										});
+									})
+							}
 							me.cuIList = [...beSelect]
 						} else {
 							uni.showToast({
@@ -572,21 +675,36 @@
 					})
 			},
 			packing() {
-				var printCode = new Date().getTime();
-				for (var element in this.cuIList) {
-					console.log(this.cuIList[element])
-					if (this.cuIList[element]['pickCode'] == 0) {
-						this.cuIList[element]['pickCode'] = printCode;
+				console.log(this.selectedItems())
+				if(this.selectedItems().length>0){
+					var printCode = new Date().getTime();
+					for (var element in this.selectedItems()) {
+						console.log(this.selectedItems()[element])
+						if (this.selectedItems()[element]['pickCode'] == 0) {
+							this.selectedItems()[element]['pickCode'] = new Date().getTime() + Number(element);
+						}
 					}
+				}else{
+					uni.showToast({
+						icon: 'none',
+						title: '请选择装箱行',
+					});
 				}
 			},
 			packingBig() {
-				var code = 0;
-				var printCode = new Date().getTime();
-				for (var element in this.cuIList) {
-					if (this.cuIList[element]['pickBigCode'] == 0) {
-						this.cuIList[element]['pickBigCode'] = 'B' + '' + printCode;
+				if(this.selectedItems().length>0){
+					var code = 0;
+					var printCode = new Date().getTime();
+					for (var element in this.selectedItems()) {
+						if (this.selectedItems()[element]['pickBigCode'] == 0) {
+							this.selectedItems()[element]['pickBigCode'] = 'B' + '' + printCode;
+						}
 					}
+				}else{
+					uni.showToast({
+						icon: 'none',
+						title: '请选择装箱行',
+					});
 				}
 				/* for (var element in this.cuIList) {
 					if (code == 0) {
@@ -604,11 +722,13 @@
 			printCode() {
 				let me = this;
 				var printData = [];
-				for (var item in this.cuIList) {
-					if (printData.findIndex(obj => obj.pickCode === this.cuIList[item]['pickCode']) == -1 && this.cuIList[item]['pickCode'] != 0) {
+				for (var item in this.selectedItems()) {
+					if (printData.findIndex(obj => obj.pickCode === this.selectedItems()[item]['pickCode']) == -1 && this.selectedItems()[
+							item]['pickCode'] != 0) {
 						printData.push({
-							pickCode: this.cuIList[item]['pickCode'],
-							billNo: this.cuIList[item]['fBillNo']
+							pickCode: this.selectedItems()[item]['pickCode'],
+							fName: this.selectedItems()[item]['fNameTemp'],
+							billNo: this.selectedItems()[item]['fBillNo']
 						})
 					}
 				}
@@ -624,7 +744,7 @@
 								me.printNumber = 0;
 								uni.showNavigationBarLoading();
 								me.printData = printData
-								me.bindViewTap2(me.printData[0],0)
+								me.bindViewTap2(me.printData[0], 0, 0)
 							}
 						}
 					})
@@ -639,11 +759,13 @@
 			printBigCode() {
 				let me = this;
 				var printData = [];
-				for (var item in this.cuIList) {
-					if (printData.findIndex(obj => obj.pickCode === this.cuIList[item]['pickBigCode']) == -1 && this.cuIList[item]['pickBigCode'] !=0) {
+				for (var item in this.selectedItems()) {
+					if (printData.findIndex(obj => obj.pickCode === this.selectedItems()[item]['pickBigCode']) == -1 && this
+						.cuIList[item]['pickBigCode'] != 0) {
 						printData.push({
-							pickCode: this.cuIList[item]['pickBigCode'],
-							billNo: this.cuIList[item]['fBillNo']
+							pickCode: this.selectedItems()[item]['pickBigCode'],
+							fName: this.selectedItems()[item]['fNameTemp'],
+							billNo: this.selectedItems()[item]['fBillNo']
 						})
 					}
 				}
@@ -659,7 +781,7 @@
 								me.printNumber = 0;
 								uni.showNavigationBarLoading();
 								me.printData = printData
-								me.bindViewTap2(me.printData[0],0)
+								me.bindViewTap2(me.printData[0], 0, 1)
 							}
 						}
 					})
@@ -713,20 +835,27 @@
 							FSrcEntryID: [{
 								FENTRYID: list[element]['fEntryId'],
 								FEntryOutStatus: "待收货",
-								FEntryPackedQty: Number(list[element]['amount'])+Number(list[element]['packedQty'])
+								FEntryPackedQty: Number(list[element]['amount']) + Number(list[element]
+									['packedQty'])
 							}]
 						})
-					}else{
-						let entryData = orderParams[orderParams.findIndex(obj => obj.fid === list[element]['fid'])]['FSrcEntryID']
-						if(entryData.findIndex(obj => obj.FENTRYID === list[element]['fEntryId']) == -1){
+					} else {
+						let entryData = orderParams[orderParams.findIndex(obj => obj.fid === list[element]['fid'])][
+							'FSrcEntryID'
+						]
+						if (entryData.findIndex(obj => obj.FENTRYID === list[element]['fEntryId']) == -1) {
 							entryData.push({
-									FENTRYID: list[element]['fEntryId'],
-									FEntryOutStatus: "待收货",
-									FEntryPackedQty: Number(list[element]['amount'])+Number(list[element]['packedQty'])
-								})
-						}else{
-							entryData[entryData.findIndex(obj => obj.FENTRYID === list[element]['fEntryId'])]['FEntryPackedQty'] += Number(list[element]['amount'])
-							
+								FENTRYID: list[element]['fEntryId'],
+								FEntryOutStatus: "待收货",
+								FEntryPackedQty: Number(list[element]['amount']) + Number(list[element][
+									'packedQty'
+								])
+							})
+						} else {
+							entryData[entryData.findIndex(obj => obj.FENTRYID === list[element]['fEntryId'])][
+								'FEntryPackedQty'
+							] += Number(list[element]['amount'])
+
 						}
 					}
 					if (list[element]['pickCode'] == 0 || list[element]['pickBigCode'] == 0) {
@@ -739,6 +868,7 @@
 								"FNUMBER": list[element]['fNumber']
 							},
 							"FQty": list[element]['amount'],
+							"FUnitName": list[element]['fUnitName'],
 							"FBoxBarcode": list[element]['pickCode'],
 							"FPackBarCode": list[element]['pickBigCode'],
 							"FSrcID": list[element]['fid'],
@@ -783,7 +913,7 @@
 										"Model": {
 											"FID": orderParams[item]['fid'],
 											"FOutStatus": "待收货",
-											"FEntity":orderParams[item]['FSrcEntryID']
+											"FEntity": orderParams[item]['FSrcEntryID']
 										},
 									}
 								}).then(
@@ -794,7 +924,7 @@
 												'ResponseStatus'
 											]['IsSuccess']) {
 											if (Number(item) + 1 == orderParams.length) {
-												uni.hideNavigationBarLoading(); 
+												uni.hideNavigationBarLoading();
 												uni.showToast({
 													title: "保存成功",
 													icon: 'success',
@@ -1006,7 +1136,7 @@
 							"FilterString": "FBillNo like '%" + that.form.FBillNo + "%' and FRealQty>FEntryPackedQty",
 							"FormId": "SAL_OUTSTOCK",
 							"OrderString": "FBillNo ASC,FMaterialId.FNumber ASC",
-							"FieldKeys": "FBillNo,FCustomerID.FNumber,FCustomerID.FName,FDate,FEntity_FEntryId,FMaterialId.FNumber,FMaterialId.FName,FMaterialId.FSpecification,FSaleOrgId.FNumber,FSaleOrgId.FName,FUnitID.FNumber,FUnitID.FName,FRealQty,FSrcBillNo,FID,FEntryPackedQty",
+							"FieldKeys": "FBillNo,FCustomerID.FNumber,FCustomerID.FName,FDate,FEntity_FEntryId,FMaterialId.FNumber,FMaterialId.FName,FMaterialId.F_RXDD_MulLangText,FSaleOrgId.FNumber,FSaleOrgId.FName,FUnitID.FNumber,FUnitID.FName,FRealQty,FSrcBillNo,FID,FEntryPackedQty",
 						}
 					}).then(resPoll => {
 						let reso = resPoll[0];
@@ -1016,12 +1146,15 @@
 								beSelect.push({
 									fid: item[14],
 									fEntryId: item[4],
-									fName: item[6]+'('+item[12]+')',
+									fName: item[6] + '(' + item[12] + ')',
+									fNameTemp: item[6],
 									fNumber: item[5],
 									fQty: item[12],
+									fResidueQty: item[12] - item[15],
 									fBillNo: item[0],
 									fSpecification: item[7],
 									amount: item[12],
+									fUnitName: item[11],
 									pickCode: 0,
 									pickBigCode: 0,
 									packedQty: item[15],
@@ -1086,10 +1219,11 @@
 						basic
 							.executeBillQuery({
 								data: {
-									"FilterString": "FBillNo like '%" + res.result + "%' and FRealQty>FEntryPackedQty",
+									"FilterString": "FBillNo like '%" + res.result +
+										"%' and FRealQty>FEntryPackedQty",
 									"FormId": "SAL_OUTSTOCK",
 									"OrderString": "FBillNo ASC,FMaterialId.FNumber ASC",
-									"FieldKeys": "FBillNo,FCustomerID.FNumber,FCustomerID.FName,FDate,FEntity_FEntryId,FMaterialId.FNumber,FMaterialId.FName,FMaterialId.FSpecification,FSaleOrgId.FNumber,FSaleOrgId.FName,FUnitID.FNumber,FUnitID.FName,FRealQty,FSrcBillNo,FID,FEntryPackedQty",
+									"FieldKeys": "FBillNo,FCustomerID.FNumber,FCustomerID.FName,FDate,FEntity_FEntryId,FMaterialId.FNumber,FMaterialId.FName,FMaterialId.F_RXDD_MulLangText,FSaleOrgId.FNumber,FSaleOrgId.FName,FUnitID.FNumber,FUnitID.FName,FRealQty,FSrcBillNo,FID,FEntryPackedQty",
 								}
 							}).then(resPoll => {
 								let reso = resPoll[0];
@@ -1100,12 +1234,15 @@
 										beSelect.push({
 											fid: item[14],
 											fEntryId: item[4],
-											fName: item[6]+'('+item[12]+')',
+											fName: item[6] + '(' + item[12] + ')',
+											fNameTemp: item[6],
 											fNumber: item[5],
 											fQty: item[12],
+											fResidueQty: item[12] - item[15],
 											fBillNo: item[0],
 											fSpecification: item[7],
 											amount: item[12],
+											fUnitName: item[11],
 											pickCode: 0,
 											pickBigCode: 0,
 											packedQty: item[15],
@@ -1114,27 +1251,28 @@
 									that.toBeSelected = [...beSelect]
 									that.modalName = 'Modal'
 								} else {
-									if(resPoll.length == 0){
+									if (resPoll.length == 0) {
 										uni.showToast({
 											icon: 'none',
 											title: "该单已全部装箱"
 										})
-									}else{
+									} else {
 										uni.showToast({
 											icon: 'none',
-											title: reso[0]['Result']['ResponseStatus']['Errors'][0][
-												'Message'
-											]
+											title: reso[0]['Result']['ResponseStatus']['Errors'][0]
+												[
+													'Message'
+												]
 										})
 									}
 								}
 							}).catch(err => {
-								if(err=="TypeError: Cannot read property '0' of undefined"){
+								if (err == "TypeError: Cannot read property '0' of undefined") {
 									uni.showToast({
 										icon: 'none',
 										title: "该单已全部装箱"
 									})
-								}else{
+								} else {
 									uni.showToast({
 										icon: 'none',
 										title: err[0][0]['Result']['ResponseStatus']['Errors'][0][
